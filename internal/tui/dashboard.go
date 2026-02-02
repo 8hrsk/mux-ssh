@@ -207,8 +207,8 @@ func (m DashboardModel) View() string {
 	tabServer := "Servers"
 	tabProxy := "Proxies"
 	
-	activeTabStyle := lipgloss.NewStyle().Border(lipgloss.NormalBorder(), false, false, true, false).BorderForeground(lipgloss.Color("205")).Foreground(lipgloss.Color("205")).Bold(true)
-	inactiveTabStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	activeTabStyle := lipgloss.NewStyle().Border(lipgloss.NormalBorder(), false, false, true, false).BorderForeground(lipgloss.Color("205")).Foreground(lipgloss.Color("205")).Bold(true).Padding(0, 1)
+	inactiveTabStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Padding(0, 1)
 
 	if m.ActiveView == ViewServers {
 		tabServer = activeTabStyle.Render(tabServer)
@@ -218,7 +218,8 @@ func (m DashboardModel) View() string {
 		tabProxy = activeTabStyle.Render(tabProxy)
 	}
 
-	header := fmt.Sprintf("%s\n\n%s  %s\n", title, tabServer, tabProxy)
+	tabs := lipgloss.JoinHorizontal(lipgloss.Top, tabServer, tabProxy)
+	header := fmt.Sprintf("%s\n\n%s\n", title, tabs)
 	s := header
 	
 	// Content
