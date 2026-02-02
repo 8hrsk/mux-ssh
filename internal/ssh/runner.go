@@ -8,8 +8,8 @@ import (
 	"ssh-ogm/internal/config"
 )
 
-// Connect connects to the host defined in the config
-func Connect(cfg config.HostConfig) error {
+// Connect connects to the host defined in the config, optionally via a proxy
+func Connect(cfg config.HostConfig, proxyCfg *config.HostConfig) error {
 	// Construct arguments
 	args := []string{}
 	// Port
@@ -20,6 +20,38 @@ func Connect(cfg config.HostConfig) error {
 	if cfg.IdentityFile != "" {
 		args = append(args, "-i", cfg.IdentityFile)
 	}
+
+	// Proxy Command Logic
+	if proxyCfg != nil {
+		// Detect nc/netcat
+		// We assumes 'nc' is available on mac/linux as discussed.
+		// Command: nc -x proxyHost:proxyPort host port (for SOCKS5)
+		//          nc -X connect -x proxyHost:proxyPort host port (for HTTP/HTTPS CONNECT if suppported)
+		// macOS nc supports -X (proto) -x (proxy).
+		// Linux nc (openbsd) supports same. Traditional netcat might not.
+		// User mentioned "type(http/socks5)".
+		
+		// Construct ProxyCommand string
+		var proxyCmd string
+		proxyHost := proxyCfg.Host
+		proxyPort := proxyCfg.Port
+		
+		switch proxyCfg.Type {
+		case "socks5":
+			// nc -x proxy:port %h %p
+			proxyCmd = fmt.Sprintf("nc -x %s:%s %%h %%p", proxyHost, proxyPort)
+		case "http":
+			// nc -X connect -x proxy:port %h %p
+			proxyCmd = fmt.Sprintf("nc -X connect -x %s:%s %%h %%p", proxyHost, proxyPort)
+		default:
+			// Default to socks5 if unspecified or use safe default?
+			// Let's assume socks5 as it's common for SSH.
+			proxyCmd = fmt.Sprintf("nc -x %s:%s %%h %%p", proxyHost, proxyPort)
+		}
+
+		args = append(args, "-o", fmt.Sprintf("ProxyCommand=%s", proxyCmd))
+	}
+
 	// User@Host
 	target := cfg.Host
 	if cfg.User != "" {
@@ -32,18 +64,6 @@ func Connect(cfg config.HostConfig) error {
 	
 	switch runtime.GOOS {
 	case "darwin":
-		// open -a Terminal ssh ...
-		// Note: passing arguments to Terminal via open is tricky.
-		// A common trick is writing a temp script or using osascript.
-		// For simplicity/reliability, we'll try to execute it directly if possible,
-		// but 'open' treats arguments as files.
-		// Better approach for macOS 'open':
-		// open ssh://user@host:port (but doesn't support keys easily)
-        // Alternative: Run in current terminal if exact "new window" is hard without osascript.
-		// Let's rely on inline for macOS for now unless we use osascript.
-        // The user prompted: "CLI opens a new terminal".
-        // Let's use osascript for macOS to be compliant.
-        // script := fmt.Sprintf(`tell application "Terminal" to do script "ssh %s"`, target) // Simplified. Keys/Ports make this complex.
         // Fallback to inline for now to ensure reliability, as 'open' is complex with args.
         cmd = exec.Command("ssh", args...)
         cmd.Stdin = os.Stdin

@@ -13,6 +13,11 @@ type HostConfig struct {
 	User         string
 	Port         string
 	IdentityFile string
+	
+	// Proxy specific
+	Proxy    string // Name of the proxy to use (for Servers)
+	Password string // (for Proxies)
+	Type     string // socks5, http (for Proxies)
 }
 
 // Parse reads the configuration from the reader and returns a list of HostConfigs
@@ -78,6 +83,12 @@ func Parse(r io.Reader) ([]HostConfig, error) {
 				currentConfig.Port = value
 			case "identity":
 				currentConfig.IdentityFile = value
+			case "proxy":
+				currentConfig.Proxy = value
+			case "password":
+				currentConfig.Password = value
+			case "type":
+				currentConfig.Type = value
 			default:
 				// Decide if we error on unknown keys or ignore. Sticking to simple options for now.
 				// For extensibility, we might ignore or warn. Let's error to be strict as requested.
