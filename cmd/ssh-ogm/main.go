@@ -48,8 +48,7 @@ func main() {
 		}
 	}
 
-	// TODO: Normal Run - Load Config and Start Dashboard
-	fmt.Println("Loading configuration...")
+	// Parse Server Config
 	f, err := os.Open(mgr.GetConfigPath())
 	if err != nil {
 		fmt.Printf("Error opening config: %v\n", err)
@@ -64,7 +63,6 @@ func main() {
 	}
 
 	// Parse Proxy Config
-	fmt.Println("Loading proxy configuration...")
 	pf, err := os.Open(mgr.GetProxiesPath())
 	if err != nil {
 		fmt.Printf("Error opening proxies config: %v\n", err)
@@ -77,8 +75,6 @@ func main() {
 		fmt.Printf("Error parsing proxies config: %v\n", err)
 		os.Exit(1)
 	}
-
-	fmt.Printf("Loaded %d servers and %d proxies.\n", len(configs), len(proxies))
 
 	// Start Dashboard
 	p := tea.NewProgram(tui.NewDashboardModel(configs, proxies, mgr))
@@ -115,7 +111,5 @@ func main() {
 			fmt.Printf("Error connecting: %v\n", err)
 			os.Exit(1)
 		}
-	} else {
-		fmt.Println("Exiting.")
 	}
 }

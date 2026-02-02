@@ -198,7 +198,7 @@ func (m DashboardModel) View() string {
 		if m.Message != "" {
 			return m.Message + "\n"
 		}
-		return "Goodbye!\n"
+		return ""
 	}
 
 	// Header / Tabs
