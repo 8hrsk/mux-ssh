@@ -15,6 +15,7 @@ type ViewState int
 const (
 	ViewServers ViewState = iota
 	ViewProxies
+	ViewEditorPrompt
 )
 
 type DashboardModel struct {
@@ -33,6 +34,10 @@ type DashboardModel struct {
 	Selected   *config.HostConfig
 	Quitting   bool
 	WindowSize tea.WindowSizeMsg
+
+	// Editor Prompt State
+	PromptChoice int
+	EditorTarget string
 
 	// For feedback
 	Message string
@@ -91,6 +96,39 @@ func (m DashboardModel) Init() tea.Cmd {
 }
 
 func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// Handle Editor Prompt Inputs
+	if m.ActiveView == ViewEditorPrompt {
+		switch msg := msg.(type) {
+		case tea.KeyMsg:
+			switch msg.String() {
+			case "up", "k":
+				if m.PromptChoice > 0 {
+					m.PromptChoice--
+				}
+			case "down", "j":
+				if m.PromptChoice < 1 {
+					m.PromptChoice++
+				}
+			case "enter":
+				// Launch Editor
+				editorType := config.EditorSystem
+				if m.PromptChoice == 1 {
+					editorType = config.EditorTerminal
+				}
+				config.OpenEditor(m.EditorTarget, editorType)
+				m.Message = "Configuration edited. Please restart to apply changes."
+				return m, tea.Quit
+			case "esc", "q":
+				// Cancel
+				m.ActiveView = ViewServers // Default back to whatever? Or store previous?
+				// Simple fallback:
+				m.ActiveView = ViewServers
+				m.Message = "Edit cancelled."
+			}
+		}
+		return m, nil
+	}
+
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
@@ -128,13 +166,7 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.Selected = &selected
 				return m, tea.Quit
 			}
-			// Proxies are not "connectable" directly in the main flow, 
-			// though user said "navigate... select...". 
-			// Usually we don't SSH *into* a proxy to do work, we use it. 
-			// For now, let's say Enter does nothing on proxies or maybe shows details?
-			// User request: "When user selects servers - they see... what proxy is used".
-			// Proxy page: "List of all proxies... and their status".
-			// Doesn't explicitly say "Connect to proxy".
+			// Proxies are not "connectable" directly
 			
 		case "r":
 			// Reload: Set all current view items to Checking (Blue) and re-trigger
@@ -151,28 +183,36 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case "a":
-			// Add Template
-			var err error
+			// Add: Append Template -> Transition to Prompt
+			var targetFile string
 			if m.ActiveView == ViewServers {
-				err = m.ConfigManager.AppendTemplate(config.ConfigName, "new_server", false)
-				if err == nil {
-					// Open Editor
-					config.OpenEditor(m.ConfigManager.GetConfigPath(), config.EditorSystem) 
-					// Ideally we pause the TUI or ask user to restart?
-					m.Message = "Template added! Restart CLI to apply."
-					return m, tea.Quit // User usually needs to edit it now
-				}
+				m.ConfigManager.AppendTemplate(config.ConfigName, "new_server", false)
+				targetFile = m.ConfigManager.GetConfigPath()
 			} else {
-				err = m.ConfigManager.AppendTemplate(config.ProxiesName, "new_proxy", true)
-				if err == nil {
-					config.OpenEditor(m.ConfigManager.GetProxiesPath(), config.EditorSystem)
-					m.Message = "Proxy template added! Restart CLI to apply."
-					return m, tea.Quit
-				}
+				m.ConfigManager.AppendTemplate(config.ProxiesName, "new_proxy", true)
+				targetFile = m.ConfigManager.GetProxiesPath()
 			}
-			if err != nil {
-				m.Message = fmt.Sprintf("Error adding template: %v", err)
+			
+			// Setup Prompt
+			m.EditorTarget = targetFile
+			m.PromptChoice = 0
+			m.ActiveView = ViewEditorPrompt
+			m.Message = "Template added. Select editor:"
+
+		case "e":
+			// Edit: Transition to Prompt
+			var targetFile string
+			if m.ActiveView == ViewServers {
+				targetFile = m.ConfigManager.GetConfigPath()
+			} else {
+				targetFile = m.ConfigManager.GetProxiesPath()
 			}
+
+			// Setup Prompt
+			m.EditorTarget = targetFile
+			m.PromptChoice = 0
+			m.ActiveView = ViewEditorPrompt
+			m.Message = "Select editor to open config:"
 		}
 
 	case PingResultMsg:
@@ -199,6 +239,34 @@ func (m DashboardModel) View() string {
 			return m.Message + "\n"
 		}
 		return ""
+	}
+
+	// Editor Prompt View
+	if m.ActiveView == ViewEditorPrompt {
+		s := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("205")).Render("Edit Configuration") + "\n\n"
+		if m.Message != "" {
+			s += m.Message + "\n\n"
+		}
+		
+		cursor := "> "
+		noCursor := "  "
+		
+		// Option 0
+		if m.PromptChoice == 0 {
+			s += lipgloss.NewStyle().Foreground(lipgloss.Color("86")).Render(cursor + "System Editor (Visual)") + "\n"
+		} else {
+			s += noCursor + "System Editor (Visual)\n"
+		}
+
+		// Option 1
+		if m.PromptChoice == 1 {
+			s += lipgloss.NewStyle().Foreground(lipgloss.Color("86")).Render(cursor + "Terminal Editor (Vim/Nano)") + "\n"
+		} else {
+			s += noCursor + "Terminal Editor (Vim/Nano)\n"
+		}
+
+		s += "\n(Enter to select, Esc to cancel)\n"
+		return s
 	}
 
 	// Header / Tabs
@@ -275,7 +343,7 @@ func (m DashboardModel) View() string {
 		}
 	}
 
-	s += "\n(q: quit, r: reload, a: add, tab: switch view)\n"
+	s += "\n(q: quit, r: reload, a: add, e: edit, tab: switch view)\n"
 	if m.Message != "" {
 		s += lipgloss.NewStyle().Foreground(lipgloss.Color("205")).Render(m.Message) + "\n"
 	}
