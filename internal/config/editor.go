@@ -7,7 +7,6 @@ import (
 	"runtime"
 )
 
-// EditorType defines the supported editor modes
 type EditorType int
 
 const (
@@ -15,7 +14,6 @@ const (
 	EditorTerminal
 )
 
-// OpenEditor opens the configuration file in the specified editor
 func OpenEditor(path string, editorType EditorType) error {
 	var cmd *exec.Cmd
 
@@ -36,12 +34,10 @@ func OpenEditor(path string, editorType EditorType) error {
 		if editor == "" {
 			editor = "vim"
 		}
-		// Check if editor exists
 		if _, err := exec.LookPath(editor); err != nil {
-			// Fallback to nano if vim not found
 			editor = "nano"
 		}
-		
+
 		cmd = exec.Command(editor, path)
 		cmd.Stdin = os.Stdin
 		cmd.Stdout = os.Stdout

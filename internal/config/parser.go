@@ -3,8 +3,8 @@ package config
 import (
 	"bufio"
 	"fmt"
-	"strings"
 	"io"
+	"strings"
 )
 
 type HostConfig struct {
@@ -13,7 +13,7 @@ type HostConfig struct {
 	User         string
 	Port         string
 	IdentityFile string
-	
+
 	// Proxy specific
 	Proxy    string // Name of the proxy to use (for Servers)
 	Password string // (for Proxies)
@@ -25,7 +25,7 @@ func Parse(r io.Reader) ([]HostConfig, error) {
 	scanner := bufio.NewScanner(r)
 	var configs []HostConfig
 	var currentConfig *HostConfig
-	
+
 	lineNum := 0
 	inBlock := false
 
@@ -33,12 +33,9 @@ func Parse(r io.Reader) ([]HostConfig, error) {
 		lineNum++
 		line := strings.TrimSpace(scanner.Text())
 
-		// Skip empty lines and comments
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-
-		// Check for block start "Alias {"
 		if strings.HasSuffix(line, "{") {
 			if inBlock {
 				return nil, fmt.Errorf("line %d: nested blocks or missing closing brace not supported", lineNum)
@@ -52,7 +49,6 @@ func Parse(r io.Reader) ([]HostConfig, error) {
 			continue
 		}
 
-		// Check for block end "}"
 		if line == "}" {
 			if !inBlock {
 				return nil, fmt.Errorf("line %d: unexpected closing brace", lineNum)
@@ -65,7 +61,6 @@ func Parse(r io.Reader) ([]HostConfig, error) {
 			continue
 		}
 
-		// Check for key-values inside block
 		if inBlock {
 			parts := strings.SplitN(line, ":", 2)
 			if len(parts) != 2 {
@@ -90,14 +85,11 @@ func Parse(r io.Reader) ([]HostConfig, error) {
 			case "type":
 				currentConfig.Type = value
 			default:
-				// Decide if we error on unknown keys or ignore. Sticking to simple options for now.
-				// For extensibility, we might ignore or warn. Let's error to be strict as requested.
 				return nil, fmt.Errorf("line %d: unknown key '%s'", lineNum, key)
 			}
 			continue
 		}
 
-		// If we are here, we found text outside a block that isn't a comment or empty
 		return nil, fmt.Errorf("line %d: unexpected text outside block: %s", lineNum, line)
 	}
 

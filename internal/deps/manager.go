@@ -6,11 +6,14 @@ import (
 	"runtime"
 )
 
+// var for mocking in tests
+var lookPath = exec.LookPath
+
 // IsNetcatAvailable checks if nc, ncat, or netcat is in the PATH.
 func IsNetcatAvailable() bool {
 	cmds := []string{"nc", "ncat", "netcat"}
 	for _, cmd := range cmds {
-		if _, err := exec.LookPath(cmd); err == nil {
+		if _, err := lookPath(cmd); err == nil {
 			return true
 		}
 	}
@@ -32,9 +35,7 @@ func InstallNetcat() error {
 }
 
 func installWindows() error {
-	// Try Winget first (Standard on Windows 10/11)
 	if _, err := exec.LookPath("winget"); err == nil {
-		// Insecure.Nmap includes ncat
 		cmd := exec.Command("winget", "install", "Insecure.Nmap", "--accept-source-agreements", "--accept-package-agreements")
 		return cmd.Run()
 	}
@@ -58,16 +59,8 @@ func installMac() error {
 }
 
 func installLinux() error {
-	// Debian/Ubuntu
 	if _, err := exec.LookPath("apt-get"); err == nil {
-		// sudo is likely required, which might prompt password in terminal.
-		// TUI might block this or it might work if we attach Stdin.
-		// Simple attempt:
 		cmd := exec.Command("sudo", "apt-get", "install", "-y", "netcat")
-		// We can't easily attach stdin in bubbletea's exec unless we suspend.
-		// For now, let's look for user-level install or error out.
-		// Actually, `pkexec` or forcing a terminal prompt might be needed.
-		// Let's rely on standard command execution. If it fails, user does it manually.
 		return cmd.Run()
 	}
 	// Fedora/RHEL
@@ -80,7 +73,7 @@ func installLinux() error {
 		cmd := exec.Command("sudo", "pacman", "-S", "--noconfirm", "gnu-netcat")
 		return cmd.Run()
 	}
-	
+
 	return fmt.Errorf("package manager not found or supported")
 }
 

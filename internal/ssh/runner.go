@@ -8,9 +8,8 @@ import (
 	"ssh-ogm/internal/config"
 )
 
-// Connect connects to the host defined in the config, optionally via a proxy
-func Connect(cfg config.HostConfig, proxyCfg *config.HostConfig) error {
-	// Construct arguments
+// ConstructSSHArgs builds the SSH arguments list
+func ConstructSSHArgs(cfg config.HostConfig, proxyCfg *config.HostConfig) []string {
 	args := []string{}
 	// Port
 	if cfg.Port != "" {
@@ -23,15 +22,6 @@ func Connect(cfg config.HostConfig, proxyCfg *config.HostConfig) error {
 
 	// Proxy Command Logic
 	if proxyCfg != nil {
-		// Detect nc/netcat
-		// We assumes 'nc' is available on mac/linux as discussed.
-		// Command: nc -x proxyHost:proxyPort host port (for SOCKS5)
-		//          nc -X connect -x proxyHost:proxyPort host port (for HTTP/HTTPS CONNECT if suppported)
-		// macOS nc supports -X (proto) -x (proxy).
-		// Linux nc (openbsd) supports same. Traditional netcat might not.
-		// User mentioned "type(http/socks5)".
-		
-		// Construct ProxyCommand string
 		var proxyCmd string
 		proxyHost := proxyCfg.Host
 		proxyPort := proxyCfg.Port
@@ -44,8 +34,7 @@ func Connect(cfg config.HostConfig, proxyCfg *config.HostConfig) error {
 			// nc -X connect -x proxy:port %h %p
 			proxyCmd = fmt.Sprintf("nc -X connect -x %s:%s %%h %%p", proxyHost, proxyPort)
 		default:
-			// Default to socks5 if unspecified or use safe default?
-			// Let's assume socks5 as it's common for SSH.
+			// Default to socks5
 			proxyCmd = fmt.Sprintf("nc -x %s:%s %%h %%p", proxyHost, proxyPort)
 		}
 
@@ -58,6 +47,12 @@ func Connect(cfg config.HostConfig, proxyCfg *config.HostConfig) error {
 		target = fmt.Sprintf("%s@%s", cfg.User, cfg.Host)
 	}
 	args = append(args, target)
+	return args
+}
+
+// Connect connects to the host defined in the config, optionally via a proxy
+func Connect(cfg config.HostConfig, proxyCfg *config.HostConfig) error {
+	args := ConstructSSHArgs(cfg, proxyCfg)
 
 	// Try to spawn in a new window based on OS
 	var cmd *exec.Cmd

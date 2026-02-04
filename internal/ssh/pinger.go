@@ -1,6 +1,7 @@
 package ssh
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"os/exec"
@@ -36,7 +37,7 @@ func CheckConnection(host, port string) ServerStatus {
 	// which counts as GREEN (Online).
 	sshConfig := &ssh.ClientConfig{
 		User:            "test", // User doesn't matter for handshake check
-		Auth:            []ssh.AuthMethod{ssh.Password("test")}, 
+		Auth:            []ssh.AuthMethod{ssh.Password("test")},
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(), // We just want to check reachability
 		Timeout:         4 * time.Second,
 	}
@@ -52,9 +53,9 @@ func CheckConnection(host, port string) ServerStatus {
 	// If the error implies we reached the server but failed auth, it's ONLINE.
 	// Common errors: "ssh: handshake failed", "unable to authenticate"
 	errMsg := err.Error()
-	if strings.Contains(errMsg, "unable to authenticate") || 
-	   strings.Contains(errMsg, "handshake failed") ||
-	   strings.Contains(errMsg, "no common algorithm") {
+	if strings.Contains(errMsg, "unable to authenticate") ||
+		strings.Contains(errMsg, "handshake failed") ||
+		strings.Contains(errMsg, "no common algorithm") {
 		return StatusOnline
 	}
 
@@ -82,21 +83,21 @@ func cmdPort(p string) string {
 }
 
 func checkPing(host string) bool {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
 	var cmd *exec.Cmd
-	
+
 	switch runtime.GOOS {
 	case "windows":
-		cmd = exec.Command("ping", "-n", "1", "-w", "1000", host) // -n 1 count, -w 1000ms timeout
+		cmd = exec.CommandContext(ctx, "ping", "-n", "1", "-w", "1000", host)
 	default:
-		// Linux/Mac: -c 1 count, -W 2 timeout (seconds)
-		// Note: macOS ping -W is in milliseconds, Linux is seconds? 
-		// Actually macOS: -W wait time in ms. Linux: -W timeout in seconds. 
-		// To be safe for both, let's use -W 1000 (valid for mac) or -W 1 (valid for linux)?
-		// Linux 'ping' often supports -W in seconds. macOS supports -t timeout.
-		// Let's use a simpler heuristic or just -c 1.
-		cmd = exec.Command("ping", "-c", "1", host) 
+		// Try to make the command itself fast, but Context is the safety net.
+		// macOS uses -t for timeout in seconds, Linux uses -W.
+		// To avoid platform flag hell, we rely on CommandContext to kill it.
+		cmd = exec.CommandContext(ctx, "ping", "-c", "1", host)
 	}
-	
+
 	err := cmd.Run()
 	return err == nil
 }

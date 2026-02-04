@@ -2,10 +2,10 @@ package config
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
-	"io"
 )
 
 const (
@@ -14,12 +14,10 @@ const (
 	ProxiesName = "proxies.conf"
 )
 
-// Manager handles configuration file operations
 type Manager struct {
 	HomeDir string
 }
 
-// NewManager creates a new configuration manager
 func NewManager() (*Manager, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -28,12 +26,10 @@ func NewManager() (*Manager, error) {
 	return &Manager{HomeDir: home}, nil
 }
 
-// GetConfigPath returns the absolute path to the server config file
 func (m *Manager) GetConfigPath() string {
 	return filepath.Join(m.HomeDir, DirName, ConfigName)
 }
 
-// GetProxiesPath returns the absolute path to the proxies config file
 func (m *Manager) GetProxiesPath() string {
 	return filepath.Join(m.HomeDir, DirName, ProxiesName)
 }
@@ -65,18 +61,15 @@ const ProxyConfigHeader = `# SSH OGM Proxy Configuration
 
 `
 
-// Initialize ensures the config directory and files exist with documentation.
 func (m *Manager) Initialize() (bool, error) {
 	configDir := filepath.Join(m.HomeDir, DirName)
-	
-	// Check/Create directory
+
 	if _, err := os.Stat(configDir); os.IsNotExist(err) {
 		if err := os.MkdirAll(configDir, 0700); err != nil {
 			return false, fmt.Errorf("failed to create config directory: %w", err)
 		}
 	}
 
-	// Ensure files exist and have headers
 	firstRun, err := m.ensureFile(ConfigName, ServerConfigHeader)
 	if err != nil {
 		return false, err
@@ -90,9 +83,6 @@ func (m *Manager) Initialize() (bool, error) {
 	return firstRun, nil
 }
 
-// ensureFile checks if a file exists. If not, creates it with header.
-// If it exists, checks if header is present (simple check) and prepends if missing.
-// Returns true if created new.
 func (m *Manager) ensureFile(name, header string) (bool, error) {
 	path := filepath.Join(m.HomeDir, DirName, name)
 	created := false
@@ -115,34 +105,21 @@ func (m *Manager) ensureFile(name, header string) (bool, error) {
 		return true, nil
 	}
 
-	// Simple check: Read first few bytes to see if it starts with "# SSH OGM"
-	// For robust "prepending", we would need to read the whole file and rewrite it.
-	// Given the user constraint "If documentation gets distorted... add it at the top",
-	// a simple read-check-prepend is safer.
-
 	buf := make([]byte, len(header))
 	n, _ := f.ReadAt(buf, 0)
 	currentHeader := string(buf[:n])
 
-	// If the file content doesn't start with the expected header (or at least the first line)
-	// We should prepend. comparing full header might be brittle if they edit it slightly.
-	// Let's check first line.
 	expectedFirstLine := strings.Split(header, "\n")[0]
 	actualFirstLine := strings.Split(currentHeader, "\n")[0]
 
 	if actualFirstLine != expectedFirstLine {
-		// Prepend logic
-		content, err := io.ReadAll(f) // Read from current offset (which is 0 because of OpenFile?)
-		// wait, OpenFile doesn't reset offset? O_RDWR puts it at 0.
-		// logic: ReadAt didn't move offset.
-		// Let's confirm: ReadAll reads from current position.
-		// To be safe, Seek to 0.
+		content, err := io.ReadAll(f)
 		f.Seek(0, 0)
 		content, err = io.ReadAll(f)
 		if err != nil {
 			return false, fmt.Errorf("failed to read content of %s: %w", name, err)
 		}
-		
+
 		f.Seek(0, 0)
 		f.Truncate(0)
 		if _, err := f.WriteString(header + string(content)); err != nil {
@@ -153,7 +130,6 @@ func (m *Manager) ensureFile(name, header string) (bool, error) {
 	return created, nil
 }
 
-// AppendTemplate adds a new template block to the specified file
 func (m *Manager) AppendTemplate(filename, alias string, isProxy bool) error {
 	path := filepath.Join(m.HomeDir, DirName, filename)
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0600)

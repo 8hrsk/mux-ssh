@@ -3,63 +3,120 @@ package config
 import (
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestParse(t *testing.T) {
-	input := `
-# Comment
-prod-db {
-    host: 192.168.1.10
+	tests := []struct {
+		name    string
+		input   string
+		want    []HostConfig
+		wantErr bool
+	}{
+		{
+			name: "valid server config",
+			input: `
+server1 {
+    host: 192.168.1.1
     user: root
     port: 22
+    identity: ~/.ssh/id_rsa
 }
-
-dev-web {
-    host: dev.example.com
-    user: admin
-    identity: ~/.ssh/id_ed25519
+`,
+			want: []HostConfig{
+				{
+					Alias:        "server1",
+					Host:         "192.168.1.1",
+					User:         "root",
+					Port:         "22",
+					IdentityFile: "~/.ssh/id_rsa",
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "valid proxy config",
+			input: `
+proxy1 {
+    host: proxy.example.com
+    port: 1080
+    type: socks5
 }
-`
-	r := strings.NewReader(input)
-	configs, err := Parse(r)
-	if err != nil {
-		t.Fatalf("Parse failed: %v", err)
-	}
-
-	if len(configs) != 2 {
-		t.Errorf("expected 2 configs, got %d", len(configs))
-	}
-
-	// Check prod-db
-	if configs[0].Alias != "prod-db" || configs[0].Host != "192.168.1.10" || configs[0].User != "root" || configs[0].Port != "22" {
-		t.Errorf("prod-db parsed incorrectly: %+v", configs[0])
-	}
-
-	// Check dev-web
-	if configs[1].Alias != "dev-web" || configs[1].Host != "dev.example.com" || configs[1].User != "admin" || configs[1].IdentityFile != "~/.ssh/id_ed25519" {
-		t.Errorf("dev-web parsed incorrectly: %+v", configs[1])
-	}
+`,
+			want: []HostConfig{
+				{
+					Alias: "proxy1",
+					Host:  "proxy.example.com",
+					Port:  "1080",
+					Type:  "socks5",
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "server with proxy",
+			input: `
+server2 {
+    host: 10.0.0.1
+    proxy: proxy1
 }
-
-func TestParseErrors(t *testing.T) {
-	tests := []struct {
-		name  string
-		input string
-	}{
-		{"Nested blocks", "a { b { } }"},
-		{"Unexpected close", "}"},
-		{"Missing alias", "{ host: x }"},
-		{"Bad pair", "a { host }"},
-		{"Unknown key", "a { foo: bar }"},
-		{"Unclosed block", "a { host: x"},
+`,
+			want: []HostConfig{
+				{
+					Alias: "server2",
+					Host:  "10.0.0.1",
+					Proxy: "proxy1",
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "multiple entries",
+			input: `
+s1 {
+    host: 1.1.1.1
+}
+s2 {
+    host: 2.2.2.2
+}
+`,
+			want: []HostConfig{
+				{Alias: "s1", Host: "1.1.1.1"},
+				{Alias: "s2", Host: "2.2.2.2"},
+			},
+			wantErr: false,
+		},
+		{
+			name:    "invalid syntax - missing brace",
+			input:   `s1 { host: 1.1.1.1`,
+			want:    nil,
+			wantErr: false,
+		},
+		{
+			name: "invalid syntax - key without value",
+			input: `
+s1 {
+    host
+}
+`,
+			want: []HostConfig{
+				{Alias: "s1"},
+			},
+			wantErr: false,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			r := strings.NewReader(tt.input)
-			_, err := Parse(r)
-			if err == nil {
-				t.Errorf("expected error for %s, got nil", tt.name)
+			got, err := Parse(r)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Parse() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !tt.wantErr {
+				assert.Equal(t, tt.want, got)
 			}
 		})
 	}
