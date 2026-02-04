@@ -3,8 +3,10 @@ package tui
 import (
 	"fmt"
 	"ssh-ogm/internal/config"
+	"ssh-ogm/internal/deps"
 	"ssh-ogm/internal/ssh"
 
+	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -16,6 +18,7 @@ const (
 	ViewServers ViewState = iota
 	ViewProxies
 	ViewEditorPrompt
+	ViewInstallPrompt
 )
 
 type DashboardModel struct {
@@ -39,6 +42,11 @@ type DashboardModel struct {
 	PromptChoice int
 	EditorTarget string
 
+	// Installation State
+	Installing    bool
+	InstallError  error
+	Spinner       spinner.Model
+
 	// For feedback
 	Message string
 }
@@ -57,6 +65,10 @@ func NewDashboardModel(configs, proxies []config.HostConfig, mgr *config.Manager
 		pStatuses[p.Alias] = ssh.StatusChecking
 	}
 
+	s := spinner.New()
+	s.Spinner = spinner.Dot
+	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
+
 	return DashboardModel{
 		ConfigManager:  mgr,
 		Configs:        configs,
@@ -65,6 +77,7 @@ func NewDashboardModel(configs, proxies []config.HostConfig, mgr *config.Manager
 		ProxyStatuses:  pStatuses,
 		Cursor:         0,
 		ActiveView:     ViewServers,
+		Spinner:        s,
 	}
 }
 
@@ -95,7 +108,52 @@ func (m DashboardModel) Init() tea.Cmd {
 	)
 }
 
+// Msg types for installation
+type installFinishedMsg struct{ err error }
+
+func installNetcatCmd() tea.Cmd {
+	return func() tea.Msg {
+		err := deps.InstallNetcat()
+		return installFinishedMsg{err}
+	}
+}
+
 func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// Handle Spinner
+	var cmd tea.Cmd
+	if m.Installing {
+		m.Spinner, cmd = m.Spinner.Update(msg)
+		return m, cmd
+	}
+
+	// Handle Install Prompt
+	if m.ActiveView == ViewInstallPrompt {
+		switch msg := msg.(type) {
+		case tea.KeyMsg:
+			switch msg.String() {
+			case "y", "Y":
+				m.Installing = true
+				return m, tea.Batch(m.Spinner.Tick, installNetcatCmd())
+			case "n", "N", "esc", "q":
+				m.ActiveView = ViewServers
+				m.Message = "Proxy setup cancelled. Netcat is required."
+				return m, nil
+			}
+		case installFinishedMsg:
+			m.Installing = false
+			if msg.err != nil {
+				m.Message = fmt.Sprintf("Installation failed: %v", msg.err)
+				m.ActiveView = ViewServers
+			} else {
+				m.Message = "Netcat installed successfully!"
+				// Resume where we left off? 
+				// For simplicity, go back to Proxy view or Servers.
+				m.ActiveView = ViewProxies
+			}
+		}
+		return m, nil
+	}
+
 	// Handle Editor Prompt Inputs
 	if m.ActiveView == ViewEditorPrompt {
 		switch msg := msg.(type) {
@@ -183,12 +241,17 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case "a":
-			// Add: Append Template -> Transition to Prompt
+			// Add
 			var targetFile string
 			if m.ActiveView == ViewServers {
 				m.ConfigManager.AppendTemplate(config.ConfigName, "new_server", false)
 				targetFile = m.ConfigManager.GetConfigPath()
 			} else {
+				// Check Dependencies for Proxy
+				if !deps.IsNetcatAvailable() {
+					m.ActiveView = ViewInstallPrompt
+					return m, nil
+				}
 				m.ConfigManager.AppendTemplate(config.ProxiesName, "new_proxy", true)
 				targetFile = m.ConfigManager.GetProxiesPath()
 			}
@@ -200,7 +263,13 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.Message = "Template added. Select editor:"
 
 		case "e":
-			// Edit: Transition to Prompt
+			// Edit
+			// Check Dependencies if editing proxies (implied usage)
+			if m.ActiveView == ViewProxies && !deps.IsNetcatAvailable() {
+				m.ActiveView = ViewInstallPrompt
+				return m, nil
+			}
+
 			var targetFile string
 			if m.ActiveView == ViewServers {
 				targetFile = m.ConfigManager.GetConfigPath()
@@ -239,6 +308,26 @@ func (m DashboardModel) View() string {
 			return m.Message + "\n"
 		}
 		return ""
+	}
+
+	// Install Prompt View
+	if m.ActiveView == ViewInstallPrompt {
+		s := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("205")).Render("Dependency Missing") + "\n\n"
+		
+		if m.Installing {
+			s += fmt.Sprintf("%s Installing Netcat...\n", m.Spinner.View())
+		} else {
+			s += "Netcat is required to support Proxy tunneling.\n"
+			s += "The system could not find 'nc', 'ncat', or 'netcat' in your PATH.\n\n"
+			s += "Do you want to attempt automatic installation? (y/n)\n"
+			s += lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render("(Windows: Winget/Scoop, Mac: Brew, Linux: Apt/Dnf/Pacman)") + "\n"
+		}
+		
+		if m.Message != "" {
+			s += "\n" + lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Render(m.Message) + "\n"
+		}
+
+		return s
 	}
 
 	// Editor Prompt View
