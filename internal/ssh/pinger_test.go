@@ -1,7 +1,8 @@
 package ssh
 
 import (
-	"fmt"
+	"crypto/rand"
+	"crypto/rsa"
 	"net"
 	"testing"
 
@@ -68,26 +69,11 @@ func mustAccept(l net.Listener) net.Conn {
 }
 
 func generateKey() (ssh.Signer, error) {
-	// Generate a temporary private key
-	// To avoid heavy crypto generation in tests, we can hardcode a small test key or just fail if needed.
-	// But generate is cleaner.
-	// actually for Pinger, "handshake failed" is also considered ONLINE.
-	// So we don't strictly need a valid handshake completion.
-	// We just need the TCP connection to accept and start SSH protocol.
-	// But CheckConnection does: ssh.Dial().
-
-	// Let's use a dummy signer if possible or generate one.
-	// Generating RSA 1024 is fast enough.
-	// ... implementing key gen logic is verbose.
-	// CheckConnection considers "handshake failed" as Online.
-	// So even if our mock server hangs up or fails auth, it should pass.
-	// But `ssh.NewServerConn` requires a host key config.
-
-	// Alternative: Just simple TCP listener that sends "SSH-2.0-OpenSSH_..."?
-	// CheckConnection uses `ssh.Dial`. It expects a standard handshake.
-	// If we just send the version string, `ssh.Dial` proceeds to key exchange.
-
-	return nil, fmt.Errorf("not implemented")
+	key, err := rsa.GenerateKey(rand.Reader, 1024)
+	if err != nil {
+		return nil, err
+	}
+	return ssh.NewSignerFromKey(key)
 }
 
 // Rewriting test to use simpler TCP mock that mimics SSH roughly or just accepts connection
